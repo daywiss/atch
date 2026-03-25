@@ -18,6 +18,10 @@ static int win_changed;
 /* Socket creation time, used to compute session age in messages. */
 time_t session_start;
 
+/* Attach-side control plane socket (plumbing only for now). */
+static int ctl_listen_fd = -1;
+static char ctl_sock_path[600];
+
 char const *clear_csi_data(void)
 {
 	if (no_ansiterm || clear_method == CLEAR_NONE ||
@@ -79,6 +83,68 @@ void write_packet_or_fail(int fd, const struct packet *pkt)
 			}
 			exit(1);
 		}
+	}
+}
+
+static void cleanup_ctl_socket(void)
+{
+	if (ctl_listen_fd >= 0) {
+		close(ctl_listen_fd);
+		ctl_listen_fd = -1;
+	}
+	if (ctl_sock_path[0] != '\0') {
+		unlink(ctl_sock_path);
+		ctl_sock_path[0] = '\0';
+	}
+}
+
+static void ctl_drain_once(void)
+{
+	int cfd = accept(ctl_listen_fd, NULL, NULL);
+	if (cfd >= 0)
+		close(cfd);
+}
+
+/* Best-effort creation of an attach-local control socket.
+ * This is plumbing-only in this change: clients can connect, but commands
+ * are intentionally ignored for now.
+ */
+static void init_ctl_socket(void)
+{
+	struct sockaddr_un su;
+	char dir[512];
+	size_t n;
+
+	ctl_sock_path[0] = '\0';
+	get_session_dir(dir, sizeof(dir));
+	n = (size_t)snprintf(ctl_sock_path, sizeof(ctl_sock_path),
+			    "%s/.ctl-%d.sock", dir, (int)getpid());
+	if (n == 0 || n >= sizeof(ctl_sock_path))
+		return;
+	if (strlen(ctl_sock_path) >= sizeof(su.sun_path)) {
+		ctl_sock_path[0] = '\0';
+		return;
+	}
+
+	ctl_listen_fd = socket(PF_UNIX, SOCK_STREAM, 0);
+	if (ctl_listen_fd < 0) {
+		ctl_sock_path[0] = '\0';
+		return;
+	}
+
+	memset(&su, 0, sizeof(su));
+	su.sun_family = AF_UNIX;
+	memcpy(su.sun_path, ctl_sock_path, strlen(ctl_sock_path) + 1);
+
+	unlink(ctl_sock_path);
+	if (bind(ctl_listen_fd, (struct sockaddr *)&su, sizeof(su)) < 0) {
+		cleanup_ctl_socket();
+		return;
+	}
+	chmod(ctl_sock_path, 0600);
+	if (listen(ctl_listen_fd, 2) < 0) {
+		cleanup_ctl_socket();
+		return;
 	}
 }
 
@@ -341,8 +407,10 @@ int attach_main(int noerror)
 	 ** settings at this point. */
 	cur_term = orig_term;
 
-	/* Set a trap to restore the terminal when we die. */
+	/* Set traps for terminal + control socket cleanup when we die. */
+	atexit(cleanup_ctl_socket);
 	atexit(restore_term);
+	init_ctl_socket();
 
 	/* Set some signals. */
 	signal(SIGPIPE, SIG_IGN);
@@ -395,11 +463,17 @@ int attach_main(int noerror)
 	/* Wait for things to happen */
 	while (1) {
 		int n;
+		int maxfd = s;
 
 		FD_ZERO(&readfds);
 		FD_SET(0, &readfds);
 		FD_SET(s, &readfds);
-		n = select(s + 1, &readfds, NULL, NULL, NULL);
+		if (ctl_listen_fd >= 0) {
+			FD_SET(ctl_listen_fd, &readfds);
+			if (ctl_listen_fd > maxfd)
+				maxfd = ctl_listen_fd;
+		}
+		n = select(maxfd + 1, &readfds, NULL, NULL, NULL);
 		if (n < 0 && errno != EINTR && errno != EAGAIN) {
 			char age[32];
 			session_age(age, sizeof(age));
@@ -450,6 +524,12 @@ int attach_main(int noerror)
 
 			pkt.len = len;
 			process_kbd(s, &pkt);
+			n--;
+		}
+
+		/* Control-plane activity (plumbing-only in this change). */
+		if (n > 0 && ctl_listen_fd >= 0 && FD_ISSET(ctl_listen_fd, &readfds)) {
+			ctl_drain_once();
 			n--;
 		}
 
