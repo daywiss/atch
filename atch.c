@@ -99,6 +99,8 @@ int clear_method = CLEAR_UNSPEC;
 int quiet = 0;
 /* 1 if we should not send ansi sequences to the terminal */
 int no_ansiterm = 0;
+/* 1 if detach key opens one-line command mode instead of immediate detach. */
+int command_mode = 0;
 
 /*
 ** The original terminal settings. Shared between the master and attach
@@ -157,6 +159,8 @@ static int parse_options(int *argc, char ***argv)
 				quiet = 1;
 			else if (*p == 't')
 				no_ansiterm = 1;
+			else if (*p == 'M')
+				command_mode = 1;
 			else if (*p == 'e') {
 				++(*argv);
 				--(*argc);
@@ -760,6 +764,7 @@ static void usage(void)
 	       "  -z\t\tDisable suspend key\n"
 	       "  -q\t\tSuppress messages\n"
 	       "  -t\t\tDisable VT100 assumptions\n"
+	       "  -M\t\tEnable one-line command mode on detach key\n"
 	       "  -C <size>\tLog cap: 0=disable, e.g. 128k, 4m (default 1m)\n"
 	       "\nURL: " PACKAGE_URL "\n\n",
 	       PACKAGE_VERSION, __DATE__, __TIME__);
@@ -800,7 +805,8 @@ int main(int argc, char **argv)
 		char c = argv[0][1];
 
 		if (c != 'e' && c != 'E' && c != 'r' && c != 'R' &&
-		    c != 'z' && c != 'q' && c != 't' && c != 'C')
+		    c != 'z' && c != 'q' && c != 't' && c != 'C' &&
+		    c != 'M')
 			break;
 		if (parse_options(&argc, &argv))
 			return 1;

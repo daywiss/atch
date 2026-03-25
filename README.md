@@ -140,7 +140,19 @@ Options can appear before the subcommand, before the session name, or after the 
 | `-z` | Disable suspend-key (`^Z`) processing (pass it to the program instead). |
 | `-q` | Suppress informational messages. |
 | `-t` | Disable VT100 assumptions. |
+| `-M` | Enable one-line command mode on the detach key (`^\` by default). In this mode, pressing the detach key opens an `atch>` prompt instead of detaching immediately. |
 | `-C <size>` | Set the on-disk log cap for the session being created. Accepts a bare number (bytes), or a number with `k`/`K` (KiB) or `m`/`M` (MiB) suffix. `0` disables the log entirely. Default: `1m`. |
+
+In command mode (`-M`), the detach key opens a one-line `<current-session> - atch>` prompt at the bottom of the terminal with:
+
+- `<session>` — switch to another session
+- `list` / `ls` — list sessions
+- `detach` / `d` — detach from the current session
+- `help` / `?` — show command help
+
+While the prompt is open:
+- `Esc` and `Ctrl-C` cancel and return to the session
+- pressing the detach key again (default `^\`) detaches immediately
 
 Use `--` to separate atch options from command arguments that start with `-`:
 

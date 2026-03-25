@@ -17,6 +17,161 @@ static struct termios cur_term;
 static int win_changed;
 /* Socket creation time, used to compute session age in messages. */
 time_t session_start;
+static char *dup_sockname_for(const char *name)
+{
+	char dir[512];
+	size_t n;
+	char *full;
+
+	if (!name || !*name)
+		return NULL;
+	if (strchr(name, '/') != NULL)
+		return strdup(name);
+
+	get_session_dir(dir, sizeof(dir));
+	n = strlen(dir) + 1 + strlen(name);
+	full = malloc(n + 1);
+	if (!full)
+		return NULL;
+	snprintf(full, n + 1, "%s/%s", dir, name);
+	return full;
+}
+
+/* Return codes: 0=ok, 1=cancel (Esc/Ctrl-C), 2=detach (Ctrl-\), -1=error. */
+static int read_command_line(char *buf, size_t size)
+{
+	size_t i = 0;
+	unsigned char c;
+
+	if (!buf || size == 0)
+		return -1;
+	while (i + 1 < size) {
+		ssize_t n = read(0, &c, 1);
+
+		if (n <= 0)
+			return -1;
+		if (c == 27 || c == 3) { /* Esc or Ctrl-C */
+			buf[0] = '\0';
+			return 1;
+		}
+		if (c == (unsigned char)detach_char) { /* Ctrl-\\ again => detach */
+			buf[0] = '\0';
+			return 2;
+		}
+		if (c == '\n' || c == '\r') {
+			write_buf_or_fail(1, "\r\n", 2);
+			break;
+		}
+		if (c == 127 || c == 8) { /* backspace */
+			if (i > 0) {
+				i--;
+				write_buf_or_fail(1, "\b \b", 3);
+			}
+			continue;
+		}
+		if (c >= 32 && c < 127) {
+			buf[i++] = (char)c;
+			write_buf_or_fail(1, &c, 1);
+		}
+	}
+	buf[i] = '\0';
+	return 0;
+}
+
+static void trim_spaces(char *s)
+{
+	char *e;
+
+	while (*s == ' ' || *s == '\t')
+		memmove(s, s + 1, strlen(s));
+	e = s + strlen(s);
+	while (e > s && (e[-1] == ' ' || e[-1] == '\t'))
+		*--e = '\0';
+}
+
+/* Returns: 0=no-op, 1=detach, 2=switch requested. */
+static int command_prompt(char **switch_to)
+{
+	char line[256];
+	int action = 0;
+	int print_nl = 1;
+	char prompt[320];
+	int rc;
+	struct termios cmd_term;
+
+	/* Keep raw-like input handling, but enable OPOST so \n from helper
+	 * functions (like list output) renders as proper terminal newlines. */
+	cmd_term = cur_term;
+	cmd_term.c_oflag |= OPOST;
+	tcsetattr(0, TCSADRAIN, &cmd_term);
+
+	if (!no_ansiterm) {
+		const char *cmdline = "\033[999H\r\033[K";
+		write_buf_or_fail(1, cmdline, strlen(cmdline));
+	} else
+		write_buf_or_fail(1, "\r\n", 2);
+
+	for (;;) {
+		snprintf(prompt, sizeof(prompt), "%s - atch> ",
+			 session_shortname());
+		write_buf_or_fail(1, prompt, strlen(prompt));
+		rc = read_command_line(line, sizeof(line));
+		if (rc < 0)
+			goto done;
+		if (rc == 1) {
+			print_nl = 0;
+			if (!no_ansiterm) {
+				const char *clr = "\033[999H\r\033[K";
+				write_buf_or_fail(1, clr, strlen(clr));
+			}
+			goto done;
+		}
+		if (rc == 2) {
+			action = 1;
+			goto done;
+		}
+		trim_spaces(line);
+
+		if (line[0] == '\0')
+			goto done;
+
+		if (strcmp(line, "detach") == 0 || strcmp(line, "d") == 0) {
+			action = 1;
+			goto done;
+		}
+
+		if (strcmp(line, "list") == 0 || strcmp(line, "ls") == 0) {
+			write_buf_or_fail(1, "\r\n", 2);
+			list_main(1);
+			write_buf_or_fail(1, "\r\n", 2);
+			continue;
+		}
+
+		if (strcmp(line, "help") == 0 || strcmp(line, "?") == 0) {
+			const char *msg =
+				"\r\ncommands: <session>, list, detach, help\r\n\r\n";
+			write_buf_or_fail(1, msg, strlen(msg));
+			continue;
+		}
+
+		*switch_to = dup_sockname_for(line);
+		if (*switch_to) {
+			action = 2;
+			goto done;
+		}
+
+		{
+			const char *msg = "\r\n(out of memory)\r\n\r\n";
+			write_buf_or_fail(1, msg, strlen(msg));
+		}
+	}
+
+ done:
+	tcsetattr(0, TCSADRAIN, &cur_term);
+	if (!quiet && print_nl)
+		write_buf_or_fail(1, "\r\n", 2);
+	return action;
+}
 
 char const *clear_csi_data(void)
 {
@@ -447,6 +602,35 @@ int attach_main(int noerror)
 
 			if (len <= 0)
 				exit(1);
+
+			if (command_mode && len == 1 && pkt.u.buf[0] == detach_char) {
+				char *switch_to = NULL;
+				int action = command_prompt(&switch_to);
+
+				if (action == 1)
+					exit(0);
+				if (action == 2 && switch_to) {
+					sockname = switch_to;
+					close(s);
+					{
+						int old_clear = clear_method;
+						/* On command-mode switch, force a full terminal reset
+						 * to avoid visual artifacts from the previous session. */
+						clear_method = CLEAR_MOVE;
+						action = attach_main(0);
+						clear_method = old_clear;
+						return action;
+					}
+				}
+
+				/* Refresh full-screen apps after prompt/list/help output. */
+				pkt.type = MSG_REDRAW;
+				pkt.len = redraw_method;
+				ioctl(0, TIOCGWINSZ, &pkt.u.ws);
+				write_packet_or_fail(s, &pkt);
+				n--;
+				continue;
+			}
 
 			pkt.len = len;
 			process_kbd(s, &pkt);
