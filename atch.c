@@ -1,5 +1,6 @@
 #include "atch.h"
 #include "atch_cmd.h"
+#include "atch_cli_opts.h"
 #include "atch_session.h"
 
 /* Env-var name string, computed from progname at startup. */
@@ -110,152 +111,6 @@ int no_ansiterm = 0;
 struct termios orig_term;
 int dont_have_tty;
 
-/* Parse a size string: bare number, or number with k/K (×1024) or m/M (×1048576).
-** Writes result to *out. Returns 0 on success, 1 on error. */
-static int parse_size(const char *s, size_t *out)
-{
-	char *end;
-	unsigned long v;
-
-	if (!s || !*s)
-		return 1;
-	v = strtoul(s, &end, 10);
-	if (end == s)
-		return 1;
-	if (*end == 'k' || *end == 'K') {
-		v *= 1024;
-		end++;
-	} else if (*end == 'm' || *end == 'M') {
-		v *= 1024 * 1024;
-		end++;
-	}
-	if (*end != '\0')
-		return 1;
-	*out = (size_t)v;
-	return 0;
-}
-
-/*
-** Parse option flags from argv/argc. Stops at '--' or a non-option argument.
-** Returns 0 on success, 1 on error (message already printed).
-*/
-static int parse_options(int *argc, char ***argv)
-{
-	while (*argc >= 1 && ***argv == '-') {
-		char *p;
-
-		if (strcmp((*argv)[0], "--") == 0) {
-			++(*argv);
-			--(*argc);
-			break;
-		}
-
-		for (p = (*argv)[0] + 1; *p; ++p) {
-			if (*p == 'E')
-				detach_char = -1;
-			else if (*p == 'z')
-				no_suspend = 1;
-			else if (*p == 'q')
-				quiet = 1;
-			else if (*p == 't')
-				no_ansiterm = 1;
-			else if (*p == 'e') {
-				++(*argv);
-				--(*argc);
-				if (*argc < 1) {
-					printf("%s: No escape character "
-					       "specified.\n", progname);
-					printf("Try '%s --help' for more "
-					       "information.\n", progname);
-					return 1;
-				}
-				if ((*argv)[0][0] == '^' && (*argv)[0][1]) {
-					if ((*argv)[0][1] == '?')
-						detach_char = '\177';
-					else
-						detach_char =
-						    (*argv)[0][1] & 037;
-				} else
-					detach_char = (*argv)[0][0];
-				break;
-			} else if (*p == 'r') {
-				++(*argv);
-				--(*argc);
-				if (*argc < 1) {
-					printf("%s: No redraw method "
-					       "specified.\n", progname);
-					printf("Try '%s --help' for more "
-					       "information.\n", progname);
-					return 1;
-				}
-				if (strcmp((*argv)[0], "none") == 0)
-					redraw_method = REDRAW_NONE;
-				else if (strcmp((*argv)[0], "ctrl_l") == 0)
-					redraw_method = REDRAW_CTRL_L;
-				else if (strcmp((*argv)[0], "winch") == 0)
-					redraw_method = REDRAW_WINCH;
-				else {
-					printf("%s: Invalid redraw method "
-					       "specified.\n", progname);
-					printf("Try '%s --help' for more "
-					       "information.\n", progname);
-					return 1;
-				}
-				break;
-			} else if (*p == 'R') {
-				++(*argv);
-				--(*argc);
-				if (*argc < 1) {
-					printf("%s: No clear method "
-					       "specified.\n", progname);
-					printf("Try '%s --help' for more "
-					       "information.\n", progname);
-					return 1;
-				}
-				if (strcmp((*argv)[0], "none") == 0)
-					clear_method = CLEAR_NONE;
-				else if (strcmp((*argv)[0], "move") == 0)
-					clear_method = CLEAR_MOVE;
-				else {
-					printf("%s: Invalid clear method "
-					       "specified.\n", progname);
-					printf("Try '%s --help' for more "
-					       "information.\n", progname);
-					return 1;
-				}
-				break;
-			} else if (*p == 'C') {
-				++(*argv);
-				--(*argc);
-				if (*argc < 1) {
-					printf("%s: No log size "
-					       "specified.\n", progname);
-					printf("Try '%s --help' for more "
-					       "information.\n", progname);
-					return 1;
-				}
-				if (parse_size((*argv)[0], &log_max_size)) {
-					printf("%s: Invalid log size "
-					       "'%s'.\n", progname, (*argv)[0]);
-					printf("Try '%s --help' for more "
-					       "information.\n", progname);
-					return 1;
-				}
-				break;
-			} else {
-				printf("%s: Invalid option '-%c'\n",
-				       progname, *p);
-				printf("Try '%s --help' for more "
-				       "information.\n", progname);
-				return 1;
-			}
-		}
-		++(*argv);
-		--(*argc);
-	}
-	return 0;
-}
-
 /* Expand session name to full socket path in-place. */
 static int expand_sockname(void)
 {
@@ -326,13 +181,6 @@ static int consume_session(int *argc, char ***argv)
 	return 0;
 }
 
-/* True if arg matches any of the given names (NULL slots are ignored). */
-static int is_cmd(const char *arg, const char *a, const char *b, const char *c)
-{
-	return strcmp(arg, a) == 0 ||
-	    (b && strcmp(arg, b) == 0) || (c && strcmp(arg, c) == 0);
-}
-
 /* atch list [-a] */
 static int cmd_list(int argc, char **argv)
 {
@@ -386,11 +234,11 @@ static int cmd_current(void)
 /* atch attach <session> — strict attach, fail if missing */
 static int cmd_attach(int argc, char **argv)
 {
-	if (parse_options(&argc, &argv))
+	if (atch_parse_options(&argc, &argv))
 		return 1;
 	if (consume_session(&argc, &argv))
 		return 1;
-	if (parse_options(&argc, &argv))
+	if (atch_parse_options(&argc, &argv))
 		return 1;
 	if (argc > 0) {
 		printf("%s: Invalid number of arguments.\n", progname);
@@ -406,11 +254,11 @@ static int cmd_attach(int argc, char **argv)
 /* atch new <session> [cmd...] — create session and attach */
 static int cmd_new(int argc, char **argv)
 {
-	if (parse_options(&argc, &argv))
+	if (atch_parse_options(&argc, &argv))
 		return 1;
 	if (consume_session(&argc, &argv))
 		return 1;
-	if (parse_options(&argc, &argv))
+	if (atch_parse_options(&argc, &argv))
 		return 1;
 	argv = use_shell_if_no_cmd(argc, argv);
 	save_term();
@@ -427,11 +275,11 @@ static int cmd_new(int argc, char **argv)
 /* atch start <session> [cmd...] — create detached */
 static int cmd_start(int argc, char **argv)
 {
-	if (parse_options(&argc, &argv))
+	if (atch_parse_options(&argc, &argv))
 		return 1;
 	if (consume_session(&argc, &argv))
 		return 1;
-	if (parse_options(&argc, &argv))
+	if (atch_parse_options(&argc, &argv))
 		return 1;
 	argv = use_shell_if_no_cmd(argc, argv);
 	save_term();
@@ -446,11 +294,11 @@ static int cmd_start(int argc, char **argv)
 /* atch run <session> [cmd...] — create, master stays in foreground */
 static int cmd_run(int argc, char **argv)
 {
-	if (parse_options(&argc, &argv))
+	if (atch_parse_options(&argc, &argv))
 		return 1;
 	if (consume_session(&argc, &argv))
 		return 1;
-	if (parse_options(&argc, &argv))
+	if (atch_parse_options(&argc, &argv))
 		return 1;
 	argv = use_shell_if_no_cmd(argc, argv);
 	save_term();
@@ -685,7 +533,7 @@ static int cmd_open(char *session, int argc, char **argv)
 	sockname = session;
 	if (expand_sockname())
 		return 1;
-	if (parse_options(&argc, &argv))
+	if (atch_parse_options(&argc, &argv))
 		return 1;
 	argv = use_shell_if_no_cmd(argc, argv);
 	save_term();
@@ -793,7 +641,7 @@ int atch_cli_main(int argc, char **argv)
 		if (c != 'e' && c != 'E' && c != 'r' && c != 'R' &&
 		    c != 'z' && c != 'q' && c != 't' && c != 'C')
 			break;
-		if (parse_options(&argc, &argv))
+		if (atch_parse_options(&argc, &argv))
 			return 1;
 	}
 	if (argc < 1)
@@ -856,7 +704,7 @@ int atch_cli_main(int argc, char **argv)
 			return kill_main(0);
 		}
 
-		if (parse_options(&argc, &argv))
+		if (atch_parse_options(&argc, &argv))
 			return 1;
 		if (mode != 'a')
 			argv = use_shell_if_no_cmd(argc, argv);

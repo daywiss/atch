@@ -23,4 +23,9 @@
 - Added `atch_cmd.c/.h` for command alias resolution (`atch_resolve_command`).
 - Replaced command dispatch `if` chain in `atch.c` with enum+switch using resolver.
 - Added `atch_cmd.o` to library build.
+
+## Phase 2c incremental extraction
+- Added `atch_cli_opts.c/.h` for option parsing (`atch_parse_options`) and log-size parsing.
+- Removed parse-size/parse-options implementation from `atch.c`; now uses module API.
+- Added `atch_cli_opts.o` to `libatch.a` linkage.
 - Rebuilt and smoke-verified (`--version`, `list`).
