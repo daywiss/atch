@@ -101,6 +101,9 @@ Build just the internal static library artifact:
 make libatch.a
 ```
 
+Note: `libatch.a` is currently an internal build artifact used to modularize
+`atch` internals. It is not yet a documented/stable public API.
+
 ## Usage
 
 ```
