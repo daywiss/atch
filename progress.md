@@ -18,3 +18,9 @@
 - Replaced in-file session expansion logic in `atch.c` with module call.
 - Added `atch_session.o` to `libatch.a` linkage.
 - Rebuilt and re-smoke-tested CLI (`--version`, `list`, `current` outside session rc=1).
+
+## Phase 2b incremental extraction
+- Added `atch_cmd.c/.h` for command alias resolution (`atch_resolve_command`).
+- Replaced command dispatch `if` chain in `atch.c` with enum+switch using resolver.
+- Added `atch_cmd.o` to library build.
+- Rebuilt and smoke-verified (`--version`, `list`).

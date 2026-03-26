@@ -1,4 +1,5 @@
 #include "atch.h"
+#include "atch_cmd.h"
 #include "atch_session.h"
 
 /* Env-var name string, computed from progname at startup. */
@@ -906,29 +907,32 @@ int atch_cli_main(int argc, char **argv)
 	++argv;
 	--argc;
 
-	if (is_cmd(cmd, "list", "l", "ls"))
+	switch (atch_resolve_command(cmd)) {
+	case ATCH_CMD_LIST:
 		return cmd_list(argc, argv);
-	if (is_cmd(cmd, "current", NULL, NULL))
+	case ATCH_CMD_CURRENT:
 		return cmd_current();
-	if (is_cmd(cmd, "attach", "a", NULL))
+	case ATCH_CMD_ATTACH:
 		return cmd_attach(argc, argv);
-	if (is_cmd(cmd, "new", "n", NULL))
+	case ATCH_CMD_NEW:
 		return cmd_new(argc, argv);
-	if (is_cmd(cmd, "start", "s", NULL))
+	case ATCH_CMD_START:
 		return cmd_start(argc, argv);
-	if (is_cmd(cmd, "run", NULL, NULL))
+	case ATCH_CMD_RUN:
 		return cmd_run(argc, argv);
-	if (is_cmd(cmd, "push", "p", NULL))
+	case ATCH_CMD_PUSH:
 		return cmd_push(argc, argv);
-	if (is_cmd(cmd, "kill", "k", NULL))
+	case ATCH_CMD_KILL:
 		return cmd_kill(argc, argv);
-	if (is_cmd(cmd, "clear", NULL, NULL))
+	case ATCH_CMD_CLEAR:
 		return cmd_clear(argc, argv);
-	if (is_cmd(cmd, "tail", NULL, NULL))
+	case ATCH_CMD_TAIL:
 		return cmd_tail(argc, argv);
-	if (is_cmd(cmd, "rm", NULL, NULL))
+	case ATCH_CMD_RM:
 		return cmd_rm(argc, argv);
-
-	/* Smart default: treat first arg as session name → attach-or-create */
-	return cmd_open((char *)cmd, argc, argv);
+	case ATCH_CMD_OPEN:
+	default:
+		/* Smart default: treat first arg as session name → attach-or-create */
+		return cmd_open((char *)cmd, argc, argv);
+	}
 }
