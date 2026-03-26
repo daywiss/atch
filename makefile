@@ -11,8 +11,9 @@ else
   STATIC_FLAG = -static
 endif
 
-OBJ = attach.o master.o atch.o
-SRC = attach.c master.c atch.c
+LIBOBJ = attach.o master.o atch.o
+OBJ = main.o $(LIBOBJ)
+SRC = main.c attach.c master.c atch.c
 
 IMAGE = atch-builder
 BUILDDIR ?= .
@@ -20,8 +21,13 @@ BUILDDIR ?= .
 archs = amd64 arm64
 arch ?= $(shell arch)
 
-atch: $(OBJ)
-	$(CC) -o $(BUILDDIR)/$@ $(STATIC_FLAG) $(LDFLAGS) $(OBJ) $(LIBS)
+.DEFAULT_GOAL := atch
+
+libatch.a: $(LIBOBJ)
+	ar rcs $@ $(LIBOBJ)
+
+atch: main.o libatch.a
+	$(CC) -o $(BUILDDIR)/$@ $(STATIC_FLAG) $(LDFLAGS) main.o libatch.a $(LIBS)
 
 atch.1.md: README.md scripts/readme2man.sh
 	bash scripts/readme2man.sh $< > $@
@@ -32,7 +38,7 @@ atch.1: atch.1.md
 man: atch.1
 
 clean:
-	rm -f atch $(OBJ) *.1.md *.c~
+	rm -f atch libatch.a $(OBJ) *.1.md *.c~
 
 .PHONY: fmt
 fmt:
@@ -43,9 +49,10 @@ fmt-all:
 	$(MAKE) fmt SRCS="*.c"
 
 
+main.o: ./main.c ./atch_cli.h
 attach.o: ./attach.c ./atch.h config.h
 master.o: ./master.c ./atch.h config.h
-atch.o: ./atch.c ./atch.h config.h
+atch.o: ./atch.c ./atch.h config.h ./atch_cli.h
 
 .PHONY: build-image
 build-image:

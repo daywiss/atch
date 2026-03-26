@@ -95,6 +95,12 @@ is the right default.
 make
 ```
 
+Build just the internal static library artifact:
+
+```sh
+make libatch.a
+```
+
 ## Usage
 
 ```

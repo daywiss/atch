@@ -766,7 +766,7 @@ static void usage(void)
 	exit(0);
 }
 
-int main(int argc, char **argv)
+int atch_cli_main(int argc, char **argv)
 {
 	const char *cmd;
 
