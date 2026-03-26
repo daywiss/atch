@@ -1,4 +1,5 @@
 #include "atch.h"
+#include "atch_session.h"
 
 /* Env-var name string, computed from progname at startup. */
 const char *session_envvar;
@@ -254,29 +255,16 @@ static int parse_options(int *argc, char ***argv)
 	return 0;
 }
 
-/* Expand a bare session name to its full socket path in-place. */
-static void expand_sockname(void)
+/* Expand session name to full socket path in-place. */
+static int expand_sockname(void)
 {
-	char dir[512];
-	size_t fulllen;
-	char *full;
-	char *slash;
-
-	if (strchr(sockname, '/') != NULL)
-		return;
-
-	get_session_dir(dir, sizeof(dir));
-	slash = strrchr(dir, '/');
-	if (slash) {
-		*slash = '\0';
-		mkdir(dir, 0700);
-		*slash = '/';
+	char *full = atch_expand_session_name_dup(sockname);
+	if (!full) {
+		printf("%s: out of memory\n", progname);
+		return 1;
 	}
-	mkdir(dir, 0700);
-	fulllen = strlen(dir) + 1 + strlen(sockname);
-	full = malloc(fulllen + 1);
-	snprintf(full, fulllen + 1, "%s/%s", dir, sockname);
 	sockname = full;
+	return 0;
 }
 
 /* Return argv unchanged if argc > 0; otherwise return a {shell, NULL} argv. */
@@ -332,7 +320,8 @@ static int consume_session(int *argc, char ***argv)
 	sockname = **argv;
 	++(*argv);
 	--(*argc);
-	expand_sockname();
+	if (expand_sockname())
+		return 1;
 	return 0;
 }
 
@@ -693,7 +682,8 @@ static int cmd_rm(int argc, char **argv)
 static int cmd_open(char *session, int argc, char **argv)
 {
 	sockname = session;
-	expand_sockname();
+	if (expand_sockname())
+		return 1;
 	if (parse_options(&argc, &argv))
 		return 1;
 	argv = use_shell_if_no_cmd(argc, argv);
@@ -841,7 +831,8 @@ int atch_cli_main(int argc, char **argv)
 		sockname = *argv;
 		++argv;
 		--argc;
-		expand_sockname();
+		if (expand_sockname())
+		return 1;
 
 		if (mode == 'p') {
 			if (argc > 0) {

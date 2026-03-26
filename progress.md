@@ -12,3 +12,9 @@
   - `make`
   - `atch --version`
   - `atch list`
+
+## Phase 2 incremental extraction
+- Added `atch_session.c/.h` internal module with reusable session-name expansion (`atch_expand_session_name_dup`).
+- Replaced in-file session expansion logic in `atch.c` with module call.
+- Added `atch_session.o` to `libatch.a` linkage.
+- Rebuilt and re-smoke-tested CLI (`--version`, `list`, `current` outside session rc=1).
