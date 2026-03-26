@@ -28,4 +28,9 @@
 - Added `atch_cli_opts.c/.h` for option parsing (`atch_parse_options`) and log-size parsing.
 - Removed parse-size/parse-options implementation from `atch.c`; now uses module API.
 - Added `atch_cli_opts.o` to `libatch.a` linkage.
-- Rebuilt and smoke-verified (`--version`, `list`).
+
+## Phase 2d incremental extraction
+- Added `atch_cli_runtime.c/.h` and moved command handlers (`cmd_*`) plus shared CLI runtime helpers (`consume_session`, `save_term`, etc.) out of `atch.c`.
+- `atch.c` now focuses on process globals, env/session dir primitives, legacy+new dispatch orchestration.
+- Added `atch_cli_runtime.o` to `libatch.a` linkage.
+- Rebuilt and smoke-verified (`--version`, `list`, `current` outside session rc=1).

@@ -11,9 +11,9 @@ else
   STATIC_FLAG = -static
 endif
 
-LIBOBJ = attach.o master.o atch.o atch_session.o atch_cmd.o atch_cli_opts.o
+LIBOBJ = attach.o master.o atch.o atch_session.o atch_cmd.o atch_cli_opts.o atch_cli_runtime.o
 OBJ = main.o $(LIBOBJ)
-SRC = main.c attach.c master.c atch.c atch_session.c atch_cmd.c atch_cli_opts.c
+SRC = main.c attach.c master.c atch.c atch_session.c atch_cmd.c atch_cli_opts.c atch_cli_runtime.c
 
 IMAGE = atch-builder
 BUILDDIR ?= .
@@ -52,10 +52,11 @@ fmt-all:
 main.o: ./main.c ./atch_cli.h
 attach.o: ./attach.c ./atch.h config.h
 master.o: ./master.c ./atch.h config.h
-atch.o: ./atch.c ./atch.h config.h ./atch_cli.h ./atch_session.h ./atch_cmd.h ./atch_cli_opts.h
+atch.o: ./atch.c ./atch.h config.h ./atch_cli.h ./atch_session.h ./atch_cmd.h ./atch_cli_opts.h ./atch_cli_runtime.h
 atch_session.o: ./atch_session.c ./atch.h config.h ./atch_session.h
 atch_cmd.o: ./atch_cmd.c ./atch_cmd.h
 atch_cli_opts.o: ./atch_cli_opts.c ./atch.h config.h ./atch_cli_opts.h
+atch_cli_runtime.o: ./atch_cli_runtime.c ./atch.h config.h ./atch_cli_opts.h ./atch_session.h
 
 .PHONY: build-image
 build-image:
